@@ -1,0 +1,169 @@
+alias PID R5;
+alias processTableEntry R6;
+alias userSP R7;
+alias fileName R8;
+alias fileInodeIndex R9;
+alias i R10;
+
+alias vir R12;
+alias phy R13;
+
+PID = [SYSTEM_STATUS_TABLE + CORE*5 + 1];
+
+processTableEntry = PROCESS_TABLE+PID*16;
+
+userSP = SP;
+
+[processTableEntry + 13] = SP;          // UPTR
+SP = [processTableEntry + 11]*512 - 1;  // UArePage*512 - 1;
+[processTableEntry + 9] = 9;            // MODE = SYSCALL 9
+
+vir = userSP - 4;
+call ltv;
+fileName = [phy];
+
+backup;
+R0 = "INT 9 0";
+R1 = ACQUIRE_KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+i = 0;
+while(i<MAX_FILE_NUM)
+do
+    if([INODE_TABLE+i*16+1] == fileName)
+    then
+        break;
+    endif;
+    i = i+1;
+endwhile;
+
+if( (i==MAX_FILE_NUM) || ([INODE_TABLE+i*16+0] != EXEC) )
+// file name invalid || file is not executable
+then
+    vir = userSP - 1;
+    call ltv;
+    [phy] = -1;
+
+    backup;
+    R0 = "INT 9 1";
+    R1 = RELEASE_LOCK;
+    R2 = KERN_LOCK;
+    call ACCESS_CONTROL;
+    restore;
+
+    [processTableEntry + 9] = 0;            // MODE = No Syscall
+    SP = [processTableEntry + 13];
+    ireturn;
+endif;
+fileInodeIndex = i;
+
+backup;
+R1 = EXIT_PROCESS;
+R2 = PID;
+call PROCESS_MANAGER;
+restore;
+
+// Note: SP will be preserved after executing EXIT_PROCESS
+// SP must be intact for return inside EXIT_PROCESS to work
+
+[MEMORY_FREE_LIST + [processTableEntry + 11]] = [MEMORY_FREE_LIST + [processTableEntry + 11]] + 1;
+[SYSTEM_STATUS_TABLE+2] = [SYSTEM_STATUS_TABLE+2] - 1;
+
+SP = [processTableEntry + 11]*512 - 1;
+[processTableEntry + 4] = RUNNING;
+
+// PAGE_TABLE: Clear
+i = 0;
+while(i<10)
+do
+    [PAGE_TABLE_BASE + PID*20 + 2*i] = -1;
+    [PAGE_TABLE_BASE + PID*20 + 2*i + 1] = "0000";
+    i = i + 1;
+endwhile;
+
+// Load library
+[PTBR+0] = 63;
+[PTBR+1] = "0100";
+[PTBR+2] = 64;
+[PTBR+3] = "0100";
+
+// Heap: Don't load yet
+[PTBR+4] = -1;
+[PTBR+5] = "0000";
+[PTBR+6] = -1;
+[PTBR+7] = "0000";
+
+
+// Stack
+backup;
+R1 = GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+16] = R0;
+[PTBR+17] = "0110";
+restore;
+
+backup;
+R1 = GET_FREE_PAGE;
+call MEMORY_MANAGER;
+[PTBR+18] = R0;
+[PTBR+19] = "0110";
+restore;
+
+// DISK_MAP_TABLE: Clear
+i = 0;
+while(i<10)
+do
+    [DISK_MAP_TABLE + PID*10 + i] = -1;
+    i = i + 1;
+endwhile;
+
+i = 0;
+while( (i<= ([INODE_TABLE+ fileInodeIndex*16 + 2])/PAGE_SIZE) && (i<4))
+do
+    // CODE Pages start at 4 in DISK_MAP_TABLE
+    [DISK_MAP_TABLE + PID*10 + 4 + i]
+            // DATA BLOCKS start at 8 in INODE_TABLE
+            = [INODE_TABLE + fileInodeIndex*16 + 8+i];
+    i = i+1;
+endwhile;
+
+// First code page: allocate
+backup;
+R1 = GET_CODE_PAGE;
+R2 = [DISK_MAP_TABLE + PID*10 + 4];
+call MEMORY_MANAGER;
+[PTBR + 8] = R0;
+[PTBR + 9] = "0100";
+restore;
+
+// Initialize per process resource table for init
+R0 = [PROCESS_TABLE+PID*16+11]; // UAreaPage
+i = 0;
+while(i<8)
+do
+    [R0*512 + RESOURCE_TABLE_OFFSET + i*2     ] = -1;
+    [R0*512 + RESOURCE_TABLE_OFFSET + i*2 + 1 ] = -1;
+    i = i+ 1;
+endwhile;
+
+backup;
+R0 = "INT 9 2";
+R1 = RELEASE_LOCK;
+R2 = KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+[[PTBR+8*2]*512] = [[PTBR+4*2]*512 + 1];
+SP = 8*512;
+
+[processTableEntry + 9] = 0;            // MODE = No Syscall
+ireturn;
+
+ltv:
+    // Virtual Page
+    R10 = vir/512;
+    // Physical Page
+    R10 = [PTBR+R10*2];
+    phy = R10*512 + vir % 512;
+    return;

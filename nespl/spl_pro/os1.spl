@@ -1,0 +1,133 @@
+// idle
+loadi(69,11);
+
+// boot
+loadi(54,67);
+loadi(55,68);
+
+// boot - secondary
+loadi(128,512);
+loadi(129,513);
+
+// mod 8 - access control
+loadi(132,516);
+loadi(133,517);
+
+SP = 76*512 - 1;    // 76 is UAreaPage of IDLE
+call BOOT_MODULE;
+
+// Load idle program
+
+PTBR = PAGE_TABLE_BASE + 0*20;
+PTLR = 10;
+
+call emptytable;
+
+// Code
+[PTBR+8]  = 69;
+[PTBR+9]  = "0100";
+
+// Stack
+[PTBR+16] = 70;
+[PTBR+17] = "0110";
+
+// Entry point
+[70*512] = [69*512 + 1];
+
+//=======================Setup process table of Idle================
+
+[PROCESS_TABLE + 1]  = 0;       // PID
+[PROCESS_TABLE + 4]  = RUNNING; // STATE
+[PROCESS_TABLE + 11] = 76;      // User Area Page
+[PROCESS_TABLE + 12] = 0;       // KPTR
+[PROCESS_TABLE + 0*16 + 13] = 8*512;   // UPTR
+[PROCESS_TABLE + 14] = PTBR;
+[PROCESS_TABLE + 15] = PTLR;
+
+//------------------------------------ Load IDLE2
+
+PTBR = PAGE_TABLE_BASE + 14*20;
+PTLR = 10;
+
+call emptytable;
+
+// Code
+[PTBR+8]  = 69;
+[PTBR+9]  = "0100";
+
+// Stack
+[PTBR+16] = 83;
+[PTBR+17] = "0110";
+
+// Entry point
+[83*512] = [69*512 + 1];
+
+// -------------------------------------------------------------Setup process table of Idle2
+
+[PROCESS_TABLE + 14*16 + 1]  = 0;       // PID
+[PROCESS_TABLE + 14*16 + 4]  = RUNNING; // STATE
+[PROCESS_TABLE + 14*16 + 11] = 84;      // User Area Page
+[PROCESS_TABLE + 14*16 + 12] = 0;       // KPTR
+[PROCESS_TABLE + 14*16 + 13] = 8*512;   // UPTR
+[PROCESS_TABLE + 14*16 + 14] = PTBR;
+[PROCESS_TABLE + 14*16 + 15] = PTLR;
+
+///////// Load swapper daemon
+
+PTBR = PAGE_TABLE_BASE + 15*20;
+PTLR = 10;
+
+call emptytable;
+// Code
+[PTBR+8]  = 69;
+[PTBR+9]  = "0100";
+
+// Stack
+[PTBR+16] = 81;
+[PTBR+17] = "0110";
+
+// Entry point
+[81*512] = [69*512 + 1];
+
+// -----------------------------------------------------------Setup process table of swapper daemon
+
+[PROCESS_TABLE + 15*16 + 1]  = 15;      // PID
+[PROCESS_TABLE + 15*16 + 4]  = CREATED; // STATE
+[PROCESS_TABLE + 15*16 + 11] = 82;      // User Area Page
+[PROCESS_TABLE + 15*16 + 12] = 0;       // KPTR
+[PROCESS_TABLE + 15*16 + 13] = 8*512;   // UPTR
+[PROCESS_TABLE + 15*16 + 14] = PTBR;
+[PROCESS_TABLE + 15*16 + 15] = PTLR;
+
+//------------------------------------------------------------ Schedule Idle process
+PTBR = [PROCESS_TABLE + 14];
+PTLR = [PROCESS_TABLE + 15];
+
+// Init SYSTEM_STATUS_TABLE
+[SYSTEM_STATUS_TABLE + 1] = 0;  // PID 1
+[SYSTEM_STATUS_TABLE + 6] = 14; // PID 2
+[SYSTEM_STATUS_TABLE + 7] = 0;  // Logout Status
+
+// ------------------------------------------------------Init ACCESS CONTROL
+[KERN_LOCK] = 0;
+[SCHED_LOCK] = 0;
+
+// Power up CORE 2
+start;
+
+SP = 8*512;
+
+breakpoint;
+// Transfer control to idle process
+ireturn;
+
+emptytable:
+    R0 = 0;
+    while(R0 < PTLR)
+    do
+        R1 = PTBR + R0*2;
+        [R1] = -1;
+        [R1 + 1] = "0000";
+        R0 = R0 + 1;
+    endwhile;
+    return;

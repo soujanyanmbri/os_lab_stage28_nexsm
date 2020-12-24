@@ -1,0 +1,13 @@
+int main()
+{
+    decl
+        int temp;
+        str filenName;
+    enddecl
+    begin
+        write("Enter the file name");
+        read(filenName);
+        temp = exposcall("Exec", filenName);
+        return 0;
+    end
+}

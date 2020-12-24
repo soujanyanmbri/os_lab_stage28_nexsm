@@ -1,0 +1,117 @@
+alias usp R0;
+alias pid R1;
+alias pte R2;
+alias i R3;
+
+
+
+
+pid = [SYSTEM_STATUS_TABLE+CORE*5 + 1];
+pte = PROCESS_TABLE + pid*16;
+
+[pte + 9] = INT_SHUTDOWN;		//setting mode to syscall number ofshutdown SYSACALL i.e. 21 in PROCESS_TABLE
+usp = SP;
+
+[pte  + 13] = SP;
+SP = [pte + 11]*512 - 1;
+
+
+ backup;
+    R1 = ACQUIRE_KERN_LOCK;
+    call ACCESS_CONTROL;
+restore;
+
+
+
+
+if([pte + 1] != 2 || [pte + 3] != 1) then	//if user is NOT ROOT or if the process trying to execute SHUTDOWN SYSCALL is NOT SHELL
+	[[PTBR + 2*((usp-1)/512)]*512 + ((usp-1)%512)] = -1;
+		backup;
+		R1 = RELEASE_LOCK;
+		R2 = KERN_LOCK;
+		call ACCESS_CONTROL;
+		restore;
+
+	[pte + 9] = 0;
+	SP = [pte + 13];
+	ireturn;
+else	//if the user is ROOT and calling process is ROOT
+	pid = [SYSTEM_STATUS_TABLE + CORE*5 + 1];
+
+    reset; // Power down secondary core
+
+    // Release sched locks
+    [GLOCK + 1] = 0;
+    [GLOCK + 2] = 0;
+
+
+
+	backup;		//to kill all proccesses except curr_Proc, intin and idle
+	R2 = pid;
+	R1 = KILL_ALL;
+	call PROCESS_MANAGER;	//calling KILL_ALL of PROCESS_MANAGER module
+	restore;
+
+
+
+	i = 0;
+	while(i < MAX_BUFFER) do
+		if([BUFFER_TABLE + 4*i + 1] == 1) then
+
+			backup;         //writing back buffer pages if dirty
+			R2 = pid;
+			R1 = DISK_STORE;
+			R4 = [BUFFER_TABLE + 4*i + 0];	//block_num
+			R3 = (BUFFER/512) + i;		//page_num
+			call MOD_4;
+			restore;
+
+		endif;
+	i = i + 1;
+	endwhile;
+
+
+
+	backup;		//writing back INODE_USER_TABLE
+	R2 = pid;
+	R1 = DISK_STORE;
+	R3 = 59;
+	R4 = 3;
+	call MOD_4;
+	restore;
+
+	backup;
+	R2 = pid;
+	R1 = DISK_STORE;
+	R3 = 60;
+	R4 = 4;
+	call MOD_4;
+	restore;
+
+
+	backup;		//writing back DISK_FREE_LIST
+	R2 = pid;
+	R1 = DISK_STORE;
+	R3 = 61;
+	R4 = 2;
+	call MOD_4;
+	restore;
+
+
+	backup;		//writing back ROOT_FILE
+	R2 = pid;
+	R1 = DISK_STORE;
+	R3 = 62;
+	R4 = 5;
+	call MOD_4;
+	restore;
+
+	halt;	//finally halting machine after writing back changes to disk
+endif;
+
+
+
+
+//[[PTBR + 2*((usp-1)/512)]*512 + ((usp-1)%512)] = 0;
+
+ireturn;

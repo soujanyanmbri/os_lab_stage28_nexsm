@@ -1,0 +1,116 @@
+// get the pid of current running process
+
+multipush(BP);
+backup;
+R1 = ACQUIRE_SCHED_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+alias cpid R0;
+
+cpid = [SYSTEM_STATUS_TABLE + 5*CORE + 1];
+
+//save the values of pcbr,ptlr etc into the process table
+[PROCESS_TABLE + cpid*16 + 14] = PTBR;
+[PROCESS_TABLE + cpid*16 + 15] = PTLR;
+[PROCESS_TABLE + cpid*16 + 12] = SP%512;
+
+alias pid R1;
+pid = 0;	//by default IDLE process
+
+alias i R2;
+i = (cpid + 1);
+
+if(CORE == PRIMARY_CORE) then
+
+	if([SYSTEM_STATUS_TABLE + 5] != 0) then	//swapping is going on
+		alias dpcb R3;
+		dpcb = PROCESS_TABLE + 15*16;
+
+		if(([dpcb + 4] == READY) || ([dpcb + 4] == CREATED) || ([dpcb + 4] == RUNNING)) then
+			pid = 15;
+			//print "waitdaemon";
+		else
+			pid = 0;
+		endif;
+	
+	else
+		if([SYSTEM_STATUS_TABLE + 7] == 1 && [SYSTEM_STATUS_TABLE + 6] != IDLE2_PROCESS) then	//logout status is 1 and secondary core is not running idle2
+			pid = 0;
+		
+		else
+			while(i<14) do    //do not schedule IDLE2,daemon process and process running on sec core in this case
+				alias pcb R3;
+				pcb = PROCESS_TABLE + i*16;
+				if((([pcb + 4] == READY) || ([pcb + 4] == CREATED)) && ([pcb + 6] != 1) && [SYSTEM_STATUS_TABLE + 6] != i) then
+					pid = i;
+					break;
+				endif;
+				i = i + 1;
+			endwhile;
+		endif;
+
+	endif;
+
+else
+	cpid = [SYSTEM_STATUS_TABLE + 6];
+ 	i = (cpid + 1)%15 + 3;
+	pid = IDLE2_PROCESS;
+
+	if([SYSTEM_STATUS_TABLE + 5] != 0 || [SYSTEM_STATUS_TABLE + 7] == 1) then
+		pid = IDLE2_PROCESS;
+	else
+		while(i<=14 && i>=3) do    //do not schedule IDLE,init,shell,daemon
+				alias pcb R3;
+				pcb = PROCESS_TABLE + i*16;
+				if((([pcb + 4] == READY) || ([pcb + 4] == CREATED)) && ([pcb + 6] != 1) && [SYSTEM_STATUS_TABLE + 1] != i) then
+					pid = i;
+					break;
+				endif;
+				i = i + 1;
+			endwhile;
+	endif;
+endif;
+
+
+//print pid;
+
+breakpoint;
+
+//change the SP to kernel stack of new process
+SP = [PROCESS_TABLE + 16*pid + 11]*512 + [PROCESS_TABLE + 16*pid + 12]; 
+PTBR = [PROCESS_TABLE + 16*pid + 14];
+PTLR = [PROCESS_TABLE + 16*pid + 15];
+
+[SYSTEM_STATUS_TABLE + 5*CORE + 1] = pid;
+
+if([PROCESS_TABLE + pid*16 + 4] == CREATED) then
+	BP = [[PROCESS_TABLE + pid*16 + 11] * 512];
+	[PROCESS_TABLE + pid*16 + 4] = RUNNING;
+
+	backup;
+	R1 = RELEASE_LOCK;
+	R2 = SCHED_LOCK;
+	call ACCESS_CONTROL;
+	restore;
+
+	[PROCESS_TABLE + pid*16 + 9] = 0;
+	SP = [PROCESS_TABLE + pid*16 + 13];
+	ireturn;
+endif;
+
+[PROCESS_TABLE+pid*16+4] = RUNNING;
+
+multipop(BP);
+//print "sched";
+//print CORE;
+backup;
+R1 = RELEASE_LOCK;
+R2 = SCHED_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+//print "out";
+//print CORE;
+
+return;

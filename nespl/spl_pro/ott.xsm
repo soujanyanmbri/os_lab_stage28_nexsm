@@ -1,0 +1,12 @@
+MOV R0, 20
+MOV R1, 0
+
+
+ot: 
+	INC R1
+	PORT P1, R1
+	OUT
+	MOV R5, R1
+	EQ R5, R0
+	JZ R5, ot
+	HALT 

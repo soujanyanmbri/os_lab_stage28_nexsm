@@ -1,0 +1,26 @@
+int main()
+{
+decl
+	str uname,r,r1,u;
+    int uid,temp,fd,fd1,counter;
+enddecl
+begin
+	read(uname);
+	fd = exposcall("Open","root");
+	fd1 = exposcall("Open","root");
+	temp=exposcall("Read",fd, r);
+	counter = 0;
+   	while (counter < 480) do
+   		temp=exposcall("Seek",fd1,3);
+   		temp=exposcall("Read",fd1, r1);
+   		if (r1 == uname) then
+   			temp = exposcall ("Delete", r);
+   		endif;
+        temp = exposcall ("Seek", fd, 7);
+        temp = exposcall ("Read", fd, r);
+        temp = exposcall ("Seek", fd1, 4);
+        counter = counter + 8;
+   	endwhile;
+return 0;
+end
+}

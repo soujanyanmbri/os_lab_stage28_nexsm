@@ -1,0 +1,248 @@
+// ================================================newusr, remusr, setpwd, getuname, getuid=================================================================
+// init:
+
+alias retn R6;
+alias i R5;
+alias usp R7;
+alias sys R8;
+alias arg1 R9;
+alias arg2 R10;
+
+
+alias pid R11;
+alias pcb R12;
+// r13, r14 and r15 are used for mem translate;
+
+usp = SP;
+//print("int 16");
+
+pid = [SYSTEM_STATUS_TABLE +CORE*5+ 1];
+pcb = PROCESS_TABLE + pid *16;
+
+[pcb + 13] = SP;
+SP = [pcb + 11] *512 -1;
+
+R14 = usp - 5;
+R15 = pid;
+call ltv;
+sys = [R13];
+
+
+R14 = usp - 4;
+R15 = pid;
+call ltv;
+arg1 = [R13];
+
+R14 = usp - 3;
+R15 = pid;
+call ltv;
+arg2 = [R13];
+
+// unused args: arg3 usp - 2 
+
+R14 = usp - 1;
+R15 = pid;
+call ltv;
+retn = R13;
+
+
+ backup;
+R1 = ACQUIRE_KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+
+//print("22");
+breakpoint;
+//print("2");
+//----------------------------initialisation done so r13, r14 are free now;
+
+// R6 - R12 ARE RESERVED. DONT TOUCH THEM;
+// uname and pwd are cmds
+//=========================================================================NEW_USER======================================================================================
+if(sys == INT_NEWUSR) then
+    alias uname R13;
+    alias pwd R14;
+    alias uid R15;
+
+    [pcb + 9] = INT_NEWUSR;
+    uname = arg1;
+    pwd = arg2;
+
+    //print("3");
+    //-------------------------------------------------------------------if not root ---------------------------------------------------------
+    if([SYSTEM_STATUS_TABLE] != 1) then
+        print " not root";
+        [retn] = -2;
+        call exit;
+    endif;
+
+    if(pid != 2) then
+        [retn] = -2;
+        call exit;
+    endif;
+
+    // ----------------------------------------------------------------check for a free entry
+    //print("4");
+    uid = 0;
+    while( uid < MAX_USER_NUM) do
+        if([USER_TABLE + uid*2] == -1) then
+            break;
+        endif;
+        uid = uid + 1;
+    endwhile;
+
+    if(uid == MAX_USER_NUM) then
+        [retn] = -3;
+        call exit;
+    endif;
+    //print("5");
+    encrypt R14;
+    [USER_TABLE + uid*2] = uname;
+    [USER_TABLE + uid*2 + 1] = pwd;
+
+    [retn] = 0;
+    call exit;
+endif;
+//===================================================================rem user ==============================================================================
+if(sys == INT_REMUSR) then
+    alias uname R13;
+    alias fileid R14;
+    alias uid R15;
+
+    [pcb + 9] = INT_REMUSR;
+    uname = arg1;
+    //if([SYSTEM_STATUS_TABLE] != 1) then
+    //   [retn] = -2;
+    //   call exit;
+    //endif;
+
+    if( (pid != 2) || ([SYSTEM_STATUS_TABLE] != 1) || uname == "root" || uname == "kernel" ) then
+        [retn] = -2;
+        call exit;
+    endif;
+
+    if(uname == "root" || uname == "kernel") then
+        [retn] = -2;
+        call exit;
+    endif;
+
+    fileid = 0;
+    while(fileid < MAX_FILE_NUM) do
+        if([ROOT_FILE + fileid*8 + 3] == uid) then
+            // User still has files present on disk
+            [retn] = -3;
+            call exit;
+        endif;
+        fileid = fileid + 1;
+    endwhile;
+
+    [USER_TABLE + uid*2] = -1;
+    [USER_TABLE + uid*2 + 1] = -1;
+
+    [retn] = 0;
+    call exit;
+
+endif;
+
+//======================================================SET PWD =========================================================================================
+
+if(sys == INT_SETPWD) then
+    alias uname R13;
+    alias pwd R14;
+    alias uid R15;
+
+    [pcb + 9] = INT_SETPWD;
+    uname = arg1;
+    pwd = arg2;
+
+    uid = 0;
+    while( uid < MAX_USER_NUM) do
+        if([USER_TABLE + uid*2] == uname) then
+            break;
+        endif;
+        uid = uid + 1;
+    endwhile;
+
+    if(uid == MAX_USER_NUM) then
+        [retn] = -3;
+        call exit;
+    endif;
+
+    // neither the current process uid is not uid nor is root
+    if( [pcb+3] != uid && uid != 1) then
+        [retn] = -1;
+        call exit;
+    endif;
+    encrypt R14;
+    [USER_TABLE + uid*2 + 1] = pwd;
+    [retn] = 0;
+    call exit;
+
+endif;
+
+//=============================================int get uid =================================================================================
+if(sys == INT_GETUID) then
+    alias uname R13;
+    alias uid R14;
+
+    [pcb + 9] = INT_GETUID;
+    uname = arg1;
+    uid = 0;
+    while( uid < MAX_USER_NUM) do
+        if([USER_TABLE + uid*2] == uname) then
+            break;
+        endif;
+        uid = uid + 1;
+    endwhile;
+
+    if(uid == MAX_USER_NUM) then
+        [retn] = -1;
+        call exit;
+    endif;
+
+    [retn] = uid;
+    call exit;
+endif;
+
+// ===========================================int get uname======================================================================================
+if(sys == INT_GETUNAME) then
+    alias uname R13;
+    alias uid R14;
+
+    [pcb + 9] = INT_GETUNAME;
+    uid = arg1;
+    
+    if(uid<0 || uid>MAX_USER_NUM) then
+        [retn] = -1;
+        call exit;
+    endif;
+
+    if( [USER_TABLE + uid*2] == -1) then
+        [retn] = -1;
+        call exit;
+    endif;
+
+    [retn] = [USER_TABLE + uid*2];
+    call exit;
+
+endif;
+
+
+exit:
+    backup;
+    R1 = RELEASE_LOCK;
+    R2 = KERN_LOCK;
+    call ACCESS_CONTROL;
+    restore;
+
+
+    [pcb +9] = 0;
+    SP = [pcb + 13];
+    ireturn;
+
+ltv:
+    i = R14/512;
+    i = [PAGE_TABLE_BASE + R15*20 + 2*i];
+    R13 = (i*512) + (R14%512);
+    return;

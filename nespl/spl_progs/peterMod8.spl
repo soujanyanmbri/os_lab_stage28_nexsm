@@ -1,0 +1,87 @@
+alias functionNum  R1;
+alias arg1         R2;
+alias PID          R3;
+alias procEntry    R4;
+
+PID = [SYSTEM_STATUS_TABLE + CORE*5 + 1];
+procEntry = PROCESS_TABLE + PID*16;
+
+if(functionNum == ACQUIRE_KERN_LOCK)
+then
+  
+
+    if(CORE == SECONDARY_CORE)
+    then
+        if([SYSTEM_STATUS_TABLE + 5] != 0 // Paging
+        || [SYSTEM_STATUS_TABLE + 7] == 1 // Logout
+        ) then
+            [procEntry + 4] = READY;
+            backup;
+            call CONTEXT_SWITCH;
+            restore;
+        endif;
+    endif;
+
+
+    while(tsl(KERN_LOCK))
+    do
+        continue;
+    endwhile;
+
+    
+
+    return;
+endif;
+
+if(functionNum == ACQUIRE_SCHED_LOCK)
+then
+    alias flagptr R5;
+    alias other_flagptr R6;
+    alias turnptr R7;
+    alias other_core R8;
+
+    other_core = (CORE + 1) % 2;
+    flagptr = GLOCK + 1 + CORE;
+    other_flagptr = GLOCK + 1 + other_core;
+    turnptr = GLOCK + 3;
+
+    
+
+    [flagptr] = 1;
+    [turnptr] = other_core;
+    while([other_flagptr] == 1 && [turnptr] == other_core)
+    do
+        continue;
+    endwhile;
+
+    
+
+    return;
+endif;
+
+if(functionNum == RELEASE_LOCK)
+then
+    // arg1 is lock address
+    alias flagptr R5;
+
+    if(arg1 != KERN_LOCK && arg1 != SCHED_LOCK)
+    then
+        print "E: LOCK ADDR";   // KEEP
+    endif;
+
+    flagptr = GLOCK + 1 + CORE;
+
+    
+
+    if(arg1 == SCHED_LOCK)
+    then
+        [flagptr] = 0;
+    else
+        [arg1] = 0;
+    endif;
+
+    return;
+endif;
+
+
+return;

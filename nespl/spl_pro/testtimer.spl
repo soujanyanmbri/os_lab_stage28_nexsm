@@ -1,0 +1,103 @@
+alias pid R0;
+alias pte R1;
+alias pagingStatus    R2;
+alias pagingStatusPtr R3;
+alias i R10;
+alias pcbi R11;
+
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE+CORE*5+1]*16 + 13] = SP;
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+CORE*5+1]*16 + 11]*512 - 1;
+backup;
+
+
+
+pid = [SYSTEM_STATUS_TABLE+CORE*5+1];
+pte = PROCESS_TABLE + pid*16;
+
+pagingStatusPtr = SYSTEM_STATUS_TABLE+5;
+pagingStatus = [pagingStatusPtr];
+
+if(pagingStatus != 0)
+then
+    if(pid == 15)
+    then
+        if(pagingStatus > 2)
+        then
+            print "E: PGSTAT>2";    // KEEP
+            halt;
+        endif;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+        R3 = "INT TIM 0";
+        call ACCESS_CONTROL;
+        restore;
+
+        backup;
+        R1 = pagingStatus;
+        R2 = pid;
+        call PAGER_MODULE;
+        restore;
+
+        backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+        R3 = "INT TIMER B";
+        call ACCESS_CONTROL;
+        restore;
+
+    endif;
+else
+    if(CORE == 0) 
+    then
+        if([SYSTEM_STATUS_TABLE + 2] < MEM_LOW) // MEM_FREE_COUNT
+        then
+            [pagingStatusPtr] = SWAP_OUT;
+        else
+            if([SYSTEM_STATUS_TABLE + 4] > 0) // SWAPPED COUNT > 0
+            then
+                i = 1;
+                while(i<MAX_PROC_NUM-2) do
+                    pcbi = PROCESS_TABLE + i*16;
+                    // Swapped Out and READY and TICK > MAX_TICK
+                    if(
+                        ([pcbi+6] == 1 && [pcbi+4] == READY) &&
+                        ([SYSTEM_STATUS_TABLE + 2] > MEM_HIGH || [pcbi] > MAX_TICK)
+                    )
+                    then
+                        break;
+                    endif;
+
+                    i = i+1;
+                endwhile;
+
+                if(i<MAX_PROC_NUM-2)
+                then
+                    [pagingStatusPtr] = SWAP_IN;
+                endif;
+            endif;
+        endif;
+    endif;
+endif;
+
+[pte + 4] = READY;
+
+// Increment tick of all processes
+i = 0;
+while(i<MAX_PROC_NUM) do
+    pcbi = PROCESS_TABLE + i*16;
+    if([pcbi+4] != TERMINATED) then
+        [pcbi] = [pcbi] + 1;    // TICK
+    endif;
+    i = i+1;
+endwhile;
+
+backup;
+call CONTEXT_SWITCH;
+restore;
+
+restore;
+SP = [PROCESS_TABLE + [SYSTEM_STATUS_TABLE+CORE*5+1]*16 + 13];
+ireturn;
+

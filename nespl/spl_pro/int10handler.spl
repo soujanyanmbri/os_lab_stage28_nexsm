@@ -1,0 +1,45 @@
+alias PID R10;
+alias pte R11;
+alias hasUnterminatedProcess R12;
+
+PID = [SYSTEM_STATUS_TABLE +CORE*5 +1];
+pte = PROCESS_TABLE + PID*16;
+
+print "in10";
+[pte + 9] = 10; // mode = 10
+[pte + 13] = SP; // uptr
+SP = [pte+11]*512 -1;
+
+
+backup;
+R1 = ACQUIRE_KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+
+backup;
+R1 = EXIT_PROCESS;
+R2 = [SYSTEM_STATUS_TABLE + 5*CORE + 1];
+call MOD_1;
+restore;
+
+backup;
+R1 = RELEASE_LOCK;
+R2 = KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+backup;
+R1 = RELEASE_LOCK;
+R2 = KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+
+call MOD_5;	//schedule processes
+
+// AcquireKernLock() of the access control module must be invoked at any point after return from the scheduler (inside system calls as well as kernel modules).
+backup;
+R1 = ACQUIRE_KERN_LOCK;
+call ACCESS_CONTROL;
+restore;

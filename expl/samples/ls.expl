@@ -1,0 +1,29 @@
+int main(){
+decl
+	int ret, fdesc, tmp;
+	str fname;
+enddecl	
+begin
+	fdesc = exposcall("Open", "root");
+	if(fdesc >= 0  AND  fdesc <= 7) then	//if opening root was a success
+		ret = exposcall("Read", fdesc, fname);
+		while(ret == 0) do
+			if(fname != "-1") then
+				tmp = exposcall("Write", -2, fname);
+			endif;
+			ret = exposcall("Seek", fdesc, 7);
+			if(ret == 0) then
+				ret = exposcall("Read", fdesc, fname);
+			else
+				break;
+			endif;
+		endwhile;
+		tmp = exposcall("Close", fdesc);
+	else
+		write("error");
+	endif;
+
+return 0;
+end
+
+}

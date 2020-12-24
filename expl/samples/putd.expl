@@ -1,0 +1,21 @@
+int main() {
+decl
+    int ret, fd, temp, i;
+enddecl
+begin
+    temp = exposcall("Write", -2, "putdata.expl");
+    fd = exposcall("Open", "numbb.dat");
+
+    ret = exposcall("Seek", fd, 1024);
+
+    i = 0;
+    while(i<10)
+    do
+        ret = exposcall("Write", fd, "FZN");
+        ret = exposcall("Write", -2, i);
+        i = i+1;
+    endwhile;
+
+    return 0;
+end
+}

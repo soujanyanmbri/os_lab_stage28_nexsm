@@ -1,0 +1,14 @@
+int main()
+{
+    decl
+        str temp;
+        int lol;
+    enddecl
+    begin
+        temp = "HI";
+        while (1==1) do
+            lol =exposcall("Write", -2, temp);
+        endwhile;
+        return 0;
+    end
+}

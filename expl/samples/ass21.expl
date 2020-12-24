@@ -1,0 +1,41 @@
+decl
+    int arr[100];
+enddecl
+
+int main() {
+decl
+    int temp, pid;
+    string n;
+    int i, j;
+    int a;
+enddecl
+begin
+    pid = -1;
+    a = 1;
+    while(a == 1)
+    do
+        temp = exposcall("Write", -2, "Enter> ");
+        temp = exposcall("Read", -1, n);
+        write(n);
+        if(n == "shutdown")
+        then
+            temp = exposcall("Shutdown");
+        endif;
+
+        pid = exposcall("Fork");
+        if(pid == 0)
+        then
+            temp = exposcall("Exec", n);
+            write("execdeldoen");
+            if(temp == -1)
+            then
+                temp = exposcall("Write", -2, "BAD COMMAND");
+            endif;
+            a = 0;
+        else
+            temp = exposcall("Wait", pid);
+        endif;
+    endwhile;
+    return 0;
+end
+}

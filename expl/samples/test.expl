@@ -1,0 +1,22 @@
+int main()
+{
+decl
+    int temp, num;
+    int s;
+enddecl
+begin
+    num=1;
+    while(num<=100) do
+        s = 123;
+        if((num%2) == 1) then
+            temp = exposcall("Write",-2, "Enter: ");
+            temp = exposcall("Read", -1, s);
+            temp = exposcall("Write",-2, "Entered: ");
+            temp = exposcall("Write",-2, s);
+            temp = exposcall("Write",-2, ">>>");
+        endif;
+        num = num + 1;
+    endwhile;
+    return 0;
+end
+}

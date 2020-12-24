@@ -1,0 +1,65 @@
+// ========================================================================MOD 8=====================================================================
+// ---------------------------------------------------      access control module       ---------------------------------------------------------------------
+
+
+alias functionnum R1;
+alias arg1 R2;
+alias pid R3;
+alias pte R4;
+
+pid = [SYSTEM_STATUS_TABLE + CORE*5 + 1];
+pte = PROCESS_TABLE + pid*16;
+
+//======================================================acquire kernel lock !!==================================================================
+//------------------------------------all system calls, exception handler and timer interrupt handler.---------------------------------------
+if(functionnum == ACQUIRE_KERN_LOCK) then
+    
+    // --------------------check if paging status or logout status is on; when it is called from 2 core, lock must not be acqured state nyst be ready and Scehdulermust be cakked-----------------
+    if(CORE == SECONDARY_CORE) then
+        if([SYSTEM_STATUS_TABLE + 5] != 0 || [SYSTEM_STATUS_TABLE + 7] == 1 ) then
+            [pte+4] = READY;
+            backup;
+            call CONTEXT_SWITCH;
+            restore;
+        endif;
+    endif;
+    //--------------------wait till the kernel lock is on
+    //The contents of the memory location specified by ADDRESS is returned and the value at ADDRESS is set to 1.
+    //SYNTAX : tsl (ADDRESS)
+    while(tsl(KERN_LOCK)) do
+        continue;
+    endwhile;
+    
+    return;
+endif;
+
+// ============================================================= ACQUIRE SCHEDULER LOCK =============================================================
+// --------------Called by the Scehduler module.-----------SET BEFORE RUNNING THE SCHEDULER----------------
+if(functionnum == ACQUIRE_SCHED_LOCK) then
+    
+
+    while(tsl(SCHED_LOCK))
+    do
+        continue;
+    endwhile;
+    
+    return;
+endif;
+
+// =============================acquire gclock!! isnt used so ignore=================================================================
+// ---------------------------------release lock --------------------------------------
+//    Store 0 to the address LockVarAddress.
+if(functionnum == RELEASE_LOCK)
+then
+    // arg1 is lock address
+
+    if(arg1 != KERN_LOCK && arg1 != SCHED_LOCK)
+    then
+        print "E: LOCK ADDR";   // KEEP
+    endif;
+
+
+    [arg1] = 0;
+
+    return;
+endif;

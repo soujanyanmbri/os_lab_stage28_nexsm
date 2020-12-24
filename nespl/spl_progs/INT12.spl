@@ -1,0 +1,125 @@
+//=================================this is the logout int=============================================================
+
+alias retn R8;
+alias pid R9;
+alias pcb R10;
+alias shellpt R13;
+
+// =====================================================INIITIALISE STUFF HERE=====================================================================
+
+alias usp R3;
+
+
+print("in logout");
+breakpoint;
+usp = SP;
+pid = [SYSTEM_STATUS_TABLE +CORE*5+ 1];
+pcb = PROCESS_TABLE + pid*16;
+
+[pcb + 13] = SP;
+SP = [pcb + 11] * 512 - 1;
+
+[pcb + 9] = INT_LOGOUT;
+
+retn = [PTBR +2*((usp-1)/512)]*512 + ((usp-1)%512);
+
+backup;
+R1 = ACQUIRE_KERN_LOCK;
+call ACCESS_CONTROL;
+restore;
+
+
+//------logout statues =1
+[SYSTEM_STATUS_TABLE+7] = 1;
+while([SYSTEM_STATUS_TABLE + 6] != 14)do
+
+        backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+        call ACCESS_CONTROL;
+        restore;
+
+        backup;
+        call CONTEXT_SWITCH;
+        restore;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+        call ACCESS_CONTROL;
+        restore;
+
+endwhile;
+
+
+//---------------------------CURPID ISNT THE SHELL can be invoked only from shell-----------------------------------------------
+//Idle and init/Login will only be the running process
+if(pid != 2) then  
+    [retn] = -1;
+    call exit;
+endif;
+
+backup;
+R1 = KILL_ALL;
+R13 = 3;
+call PROCESS_MANAGER;
+restore;
+[SYSTEM_STATUS_TABLE + 7] = 0; // Logout Status
+
+//print("1");
+breakpoint;
+
+//set shell as terminated
+[PROCESS_TABLE + pid*16 + 4] = TERMINATED; // STATE
+
+//now push the entry point
+//when logged out, it should login again. 
+//after login, shell is executed
+// therefore shell should be executed in the context of the new user
+//login should be scheduled aftert this 
+//obtain the entry point of the shell program
+
+shellpt = PAGE_TABLE_BASE + 40;
+
+print([PAGE_TABLE_BASE+40 + 8]);
+
+//now place it the stack of the shell to init
+[ [shellpt + 8*2]*512 ] = [67*512+1];
+
+//print("2");
+
+//reset the usersp of the shell
+[PROCESS_TABLE + 32 + 13] = 8*512;
+
+//print("3");
+
+
+[PROCESS_TABLE + 16 + 4] = READY;
+[SYSTEM_STATUS_TABLE] = 0;
+backup;
+    R0 = "INT 12 C";
+    R1 = RELEASE_LOCK;
+    R2 = KERN_LOCK;
+    call ACCESS_CONTROL;
+    restore;
+
+    backup;
+    call CONTEXT_SWITCH;
+    restore;
+
+    backup;
+    R0 = "INT 12 D";
+    R1 = ACQUIRE_KERN_LOCK;
+    call ACCESS_CONTROL;
+    restore;
+
+
+exit:
+    backup;
+    R1 = RELEASE_LOCK;
+    R2 = KERN_LOCK;
+    call ACCESS_CONTROL;
+    restore;
+
+    [pcb +9] = 0;
+    SP = [pcb + 13];
+    ireturn;

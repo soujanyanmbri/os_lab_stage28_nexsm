@@ -1,0 +1,44 @@
+alias userSP R0;
+alias PID R1;
+alias retptr R2;
+alias word R15;
+alias physicalPageNum R11;
+alias offset R12;
+alias fileDescPhysicalAddr R10;
+alias fileDescriptor R4;
+alias physicalAddrRetVal R5;
+
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 7;
+userSP=SP;
+
+PID = [SYSTEM_STATUS_TABLE+1];
+[PROCESS_TABLE + ( [SYSTEM_STATUS_TABLE + 1] * 16) + 13] = SP;
+SP = [PROCESS_TABLE + ([SYSTEM_STATUS_TABLE + 1] * 16) + 11] * 512 - 1;
+
+physicalPageNum = [PTBR + 2 * ((userSP - 4)/ 512)];
+offset = (userSP - 4) % 512;
+fileDescPhysicalAddr = (physicalPageNum * 512) + offset;
+
+fileDescriptor=[fileDescPhysicalAddr];
+physicalAddrRetVal = ([PTBR + 2 * ((userSP - 1) / 512)] * 512) + ((userSP - 1) % 512);
+
+
+word = [[PTBR + 2 * ((userSP - 3) / 512)] * 512 + ((userSP - 3) % 512)];
+//word = userSP - 3;
+if (fileDescriptor != -1)
+then
+	[physicalAddrRetVal] = -1;
+else
+    multipush(R0, R1, R2);
+    R2 = PID;
+    R3 = word;
+    R1 = TERMINAL_READ;
+    call DEVICE_MANAGER;
+    multipop(R0, R1, R2);
+    [physicalAddrRetVal] = 0;
+endif;
+
+SP = [PROCESS_TABLE + PID*16 + 13];
+[PROCESS_TABLE + [SYSTEM_STATUS_TABLE + 1] * 16 + 9] = 0;
+// set mode flag to 0 again
+ireturn;

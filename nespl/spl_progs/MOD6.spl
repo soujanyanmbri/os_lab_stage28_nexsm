@@ -1,0 +1,215 @@
+//=====================================THIS IS PAGER MODULE HELLO =========================================
+// -----------functions: swap in and swap out only. arguments - pid for both. no return value so chill
+// -----------swap in = 2; swap out = 1;
+//------------this is responsible for selecting processes to swapout - swap in and conduct the swap out swap in 
+
+//print "mod 6";
+//print R1;
+
+alias functionnum R1;
+alias arg R2;
+
+if(functionnum == SWAP_OUT) then
+    alias pid R5;
+    alias pte R6;
+    alias i R7;
+    //print "in swap out";
+    pid = arg;
+    // --------------------------------------------find a process with the state wait process .
+    i = 3; // 0: idle; 1: init; 2: shell
+    while( i < 14) do
+        pte = PROCESS_TABLE + i * 16;
+        if( [pte + 4] == WAIT_PROCESS && [pte + 6] == 0) then
+            break;
+        endif;
+        i = i+1;
+    endwhile;
+    // ----------------------if no process is found check for semaphores;
+    if(i > 14) then
+        i = 3;
+        while( i < 14) do
+        pte = PROCESS_TABLE + i * 16;
+        if( [pte + 4] == WAIT_SEMAPHORE && [pte + 6] == 0) then
+            break;
+        endif;
+        i = i+1;
+    endwhile;
+    endif;
+    //----------------------find the one with the highest tick otherwise;
+    if(i > 14) then
+        alias hpid R8;
+        alias htick R9;
+        alias temp R1;
+        hpid = -1;
+        htick = -100;
+        i = 3;
+        while ( i < 14) do
+            pte = PROCESS_TABLE + i*16;
+            // status of the process is temp
+            temp = [pte + 4];
+            if( (temp != RUNNING && temp != TERMINATED && temp != ALLOCATED )&& ([pte] > htick) && ([pte + 6] == 0)  ) then
+                htick = [pte];
+                hpid = i;
+            endif;
+            i = i + 1;
+        endwhile;
+        i = hpid;
+        pte = PROCESS_TABLE + i*16;
+    endif;
+
+    // -----------------------no swappable processes are found -------------------------------
+    if(i > 13) then
+        [SYSTEM_STATUS_TABLE + 5] = 0;
+        R0 = -1;
+        return;
+    endif;
+    // ==========================pid is selected, now start swapping!==================================================
+    // 1. set the tick of the pte of the selected process to 0; 
+    alias ptb R8;
+    alias pti R9;
+    alias flag R10;
+    alias phy R11;
+    [pte + 0] = 0;
+    //ptb = [pte + 14];
+    ptb = PAGE_TABLE_BASE + 20*i;
+    //2. call release page to release pages of the process. invalidate the entry
+    pti = 2;
+    while(pti < 10) do
+        flag = 0; 
+        phy = [ptb + pti*2];
+        if(phy == -1) then
+            pti = pti + 1;
+            flag = 1;
+            continue;
+        endif;
+        //if stack or unshared valid heap page
+        // ---------------check if it is the heap == 2 to 3; shared heap meaning 
+        if(pti >= 8 || pti <= 3 && [MEMORY_FREE_LIST + phy] == 1 && flag == 0) then
+            multipush(R1, R2, R3, R4, R5, R6, R7, R8, R9, R10,R11, R12);
+            R1 = GET_SWAP_BLOCK;
+            call MEMORY_MANAGER;
+            multipop( R1, R2, R3, R4, R5, R6, R7, R8, R9, R10,R11, R12);
+            R12 = R0;
+            //print "swap block is";
+            //print R12;
+            [DISK_MAP_TABLE + i*10 + pti ] = R12;
+            //print "here";
+            backup;
+            R1 = DISK_STORE;
+            R2 = pid;
+            R3 = [ptb + pti*2];
+            R4 = R12;
+            call DEVICE_MANAGER;
+            restore;
+           // print "is this ti";
+        endif; 
+        if( ((pti!=2 && pti!=3)  ||  [MEMORY_FREE_LIST + phy]==1) && flag == 0) then
+				backup;
+				R1 = RELEASE_PAGE;
+				R2 = phy;
+				call MOD_2;
+				restore;
+
+				[ptb+pti*2] = -1;
+				[ptb+pti*2+1] = "0000";
+			endif;
+        //print "heree";
+        //print "release done";
+        pti = pti +1;
+  
+    endwhile;
+    [pte + 6] = 1;
+    [SYSTEM_STATUS_TABLE+4] = [SYSTEM_STATUS_TABLE+4] +1;
+    [SYSTEM_STATUS_TABLE + 5] = 0;
+    return;
+endif;
+
+//=======================================SWAP IN ================================================================
+if(functionnum == SWAP_IN) then
+	alias i R5;
+	i = 0;
+    alias pid R2;
+	alias swap_in_pid R6;
+	swap_in_pid = -1;
+
+	//loop through the process table entries to find the process with max tick
+	alias max_tick R7;
+	max_tick = 0;
+
+	i = 3;
+	while(i<15) do
+		alias protable R8;
+		protable = PROCESS_TABLE + 16*i;
+		if([protable + 6] == 1 && ([protable] > max_tick)) then
+			max_tick = [protable];
+			swap_in_pid = i;
+		endif;
+		i = i + 1;
+	endwhile;
+
+	if(swap_in_pid == -1) then
+		[SYSTEM_STATUS_TABLE + 5] = 0;
+		R0 = -1;
+		return;
+	endif;
+
+	alias swap_protable R9;
+	alias swap_pageTable R10;
+	alias disk_map_table R11;
+
+	swap_protable = PROCESS_TABLE + swap_in_pid*16;
+	swap_pageTable = PAGE_TABLE_BASE + 20*swap_in_pid;
+	disk_map_table = DISK_MAP_TABLE + 10*swap_in_pid;
+
+	[swap_protable] = 0;	//set the tick field to 0
+
+	i = 2;
+	while(i<10) do
+		if(i>=4 && i<=7) then
+			i = i + 1;
+			continue;
+		endif;
+
+		alias block R12;
+		block = [disk_map_table + i];
+
+		if(block == -1) then
+			i = i + 1;
+			continue;
+		endif;
+
+		alias page R13;
+
+		multipush(R2,R5,R6,R7,R8,R9,R10,R11,R12);
+		R1 = GET_FREE_PAGE;
+		call MOD_2;
+		page = R0;
+		multipop(R2,R5,R6,R7,R8,R9,R10,R11,R12);
+
+		backup;
+		R1 = DISK_LOAD;	//load the stack and heap blocks back into the memory
+		R2 = pid;
+		R3 = page;
+		R4 = block;
+		call MOD_4;
+		restore;
+
+		backup;
+		R1 = RELEASE_BLOCK;	//free the blocks used for storing heap and stack
+		R2 = block;
+		call MOD_2;
+		restore;
+
+		[swap_pageTable + 2*i] = page;
+		[swap_pageTable + 2*i + 1] = "0110";
+
+		[disk_map_table + i] = -1;
+		i = i + 1;
+	endwhile;
+
+	[SYSTEM_STATUS_TABLE + 5] = 0;
+	[SYSTEM_STATUS_TABLE + 4] = [SYSTEM_STATUS_TABLE + 4] - 1;	//decrement number of swapped out processes
+	[swap_protable + 6] = 0;
+	return;
+
+endif;

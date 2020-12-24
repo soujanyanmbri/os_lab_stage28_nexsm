@@ -1,0 +1,132 @@
+alias functionNum R1;
+print "INmod2";
+print R1;
+if (functionNum == 1) then			//Get Free Page
+	[SYSTEM_STATUS_TABLE + 3] = [SYSTEM_STATUS_TABLE + 3] + 1;	//wait mem count
+	if ([SYSTEM_STATUS_TABLE + 2] == 0) then
+		multipush(R1);
+		R1 = 1;
+		R2 = [SYSTEM_STATUS_TABLE + 1];
+		call MOD_6;
+		multipop(R1);
+	endif;
+	while ([SYSTEM_STATUS_TABLE + 2] == 0) do
+		[PROCESS_TABLE + ([SYSTEM_STATUS_TABLE+CORE*5 + 1] * 16) + 4] = WAIT_MEM;
+		backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+        call ACCESS_CONTROL;
+        restore;
+
+        backup;
+        call CONTEXT_SWITCH;
+        restore;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+        call ACCESS_CONTROL;
+        restore;
+
+	endwhile;
+	[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] - 1; 
+	[SYSTEM_STATUS_TABLE + 3] = [SYSTEM_STATUS_TABLE + 3] - 1;
+	alias i R0;
+	i = 76;
+	while (i < 128) do
+		if ([MEMORY_FREE_LIST + i] == 0) then
+			[MEMORY_FREE_LIST + i] = 1;
+			return;
+		endif;
+		i = i + 1;
+	endwhile;
+	print("Mod2");
+endif;
+
+// ---------------------------------release page--------------------------------------------------------
+if (functionNum == 2) then			
+	alias page R2;
+	[MEMORY_FREE_LIST + page] = [MEMORY_FREE_LIST + page] - 1;
+	if ([MEMORY_FREE_LIST + page] == 0) then
+		[SYSTEM_STATUS_TABLE + 2] = [SYSTEM_STATUS_TABLE + 2] + 1;
+	endif;
+	alias i R3;
+	i = 1;
+	while (i < 16) do
+		if ([PROCESS_TABLE + (i * 16) + 4] == WAIT_MEM) then
+			[PROCESS_TABLE + (i * 16) + 4] = READY;
+		endif;
+		i = i + 1;
+	endwhile;
+	return;
+endif;
+
+
+// ------------------------------GET FREE BLOCK-------------------------------------------------------
+if (functionNum == 3) then			
+	alias i R0;
+	i = DISK_FREE_AREA;
+	while (i < DISK_SWAP_AREA) do
+		if ([DISK_FREE_LIST + i] == 0) then
+			[DISK_FREE_LIST + i] = 1;
+			return;
+		endif;
+		i = i + 1;
+	endwhile;
+	R0 = -1;
+	return;
+endif;
+
+// -----------------------------------release block--------------------------------------------------
+if (functionNum == 4) then			
+	alias BlockNum R2;
+	alias pid R3;
+	[DISK_FREE_LIST + BlockNum] = 0;
+	return;
+endif;
+if (functionNum == 5) then			//Get Code Page
+	alias BlockNum R2;
+	alias i R3;
+	alias index R4;
+	i = 0;
+	while(i < 16) do
+		index = 4;
+		while(index < 8) do
+			if ([DISK_MAP_TABLE + i*10 + index] == BlockNum) then
+				if ([PAGE_TABLE_BASE + i*20 + index*2 + 1] == "0100" || [PAGE_TABLE_BASE + i*20 + index*2 + 1] == "1100") then		//check if valid
+					R0 = [PAGE_TABLE_BASE + i*20 + index*2];
+					[MEMORY_FREE_LIST + R0] = [MEMORY_FREE_LIST + R0] + 1; //Memory free list
+					return;
+				endif;
+			endif;
+			index = index + 1;
+		endwhile;
+		i = i + 1;
+	endwhile;
+	multipush(R1,R2);
+	R1 = 1;
+	call MOD_2;
+	multipop(R1,R2);
+	multipush(R0,R1,R2);
+	R1 = 2;
+	R4 = R2;
+	R2 = [SYSTEM_STATUS_TABLE +CORE*5+ 1];
+	R3 = R0;
+	call MOD_4;
+	multipop(R0,R1,R2);
+	return;
+endif;
+if (functionNum == 6) then			//Get Swap block
+	alias i R0;
+	i = DISK_SWAP_AREA;
+	while(i < 512) do				//DISK_SIZE = 512
+		if([DISK_FREE_LIST + i] == 0) then
+			[DISK_FREE_LIST + i] = 1;
+			//print(i);
+			//breakpoint;
+			return;
+		endif;
+		i = i + 1;
+	endwhile;
+	R0 = -1;
+	return;
+endif;

@@ -1,0 +1,356 @@
+// Page 0 - ROM
+// Page 1 - OS start code
+// Page 2-3 - Exception handler (INT 0)
+// Page 3-4 - Timer interrupt (INT 1) and so on until INT 18
+// Page 54-55 - BOOT module (This)
+// ( Page 40-127 - Unreserved until stage 12? )
+
+// Load secondary bootloader
+loadi(128,512);
+
+// Load Access Control module
+loadi(132,516);
+loadi(133,517);
+
+// ______ INTERRUPTS __________
+    ////Load exception handler /INT 0 (Block 15,16 to page 2,3)
+    //loadi(2, 15);
+    //loadi(3, 16);
+    ////Load timer interrupt handler /INT 1 (Blocks 17,18 to pages 4,5)
+    //loadi(4, 17);
+    //loadi(5, 18);
+    ////Load disk interrupt handler /INT 2 (Blocks 19,20 to pages 6,7)
+    //loadi(6, 19);
+    //loadi(7, 20);
+    ////Load console interrupt handler /INT 3 (Blocks 21,22 to pages 8,9)
+    //loadi(8, 21);
+    //loadi(9, 22);
+    ////Load INT4 interrupt (Block 23,24 to page 10,11)
+    //loadi(10,23);
+    //loadi(11,24);
+    ////Load INT5 interrupt (Block 25,26 to page 12,13)
+    //loadi(12,25);
+    //loadi(13,26);
+    ////Load INT6 interrupt (Block 27,28 to page 24,15)
+    //loadi(14,27);
+    //loadi(15,28);
+    ////Load INT7 interrupt (Block 29,30 to page 16,17)
+    //loadi(16,29);
+    //loadi(17,30);
+    ////Load INT8 interrupt (Block 31,32 to page 18,19)
+    //loadi(18,31);
+    //loadi(19,32);
+    ////Load INT9 interrupt (Block 35,36 to page 22,23)
+    //loadi(20,33);
+    //loadi(21,34);
+    ////Load INT10 interrupt (Block 35,36 to page 22,23)
+    //loadi(22,35);
+    //loadi(23,36);
+    ////Load INT11 interrupt (Block 35,36 to page 22,23)
+    //loadi(24,37);
+    //loadi(25,38);
+    ////Load INT12 interrupt (Block 35,36 to page 22,23)
+    //loadi(26,39);
+    //loadi(27,40);
+    ////Load INT13 interrupt (Block 35,36 to page 22,23)
+    //loadi(28,41);
+    //loadi(29,42);
+    ////Load INT14 interrupt (Block 35,36 to page 22,23)
+    //loadi(30,43);
+    //loadi(31,44);
+    ////Load INT15 interrupt (Block 35,36 to page 22,23)
+    //loadi(32,45);
+    //loadi(33,46);
+    ////Load INT16 interrupt (Block 35,36 to page 22,23)
+    //loadi(34,47);
+    //loadi(35,48);
+    ////Load INT17 interrupt (Block 35,36 to page 22,23)
+    //loadi(36,49);
+    //loadi(37,50);
+
+// LOAD INTERRUPTS
+alias page R0;
+alias block R1;
+page = 2;
+block = 15;
+while ( page < 38)
+do
+    loadi(page, block);
+    page = page+1;
+    block = block+1;
+endwhile;
+
+
+// _______ MODULES __________
+//Load Resource Manager module (MOD_0) (Block 53,54 to page 40,41)
+loadi(40,53);
+loadi(41,54);
+//Load Resource Manager module (MOD_1) (Block 55,56 to page 42,43)
+loadi(42,55);
+loadi(43,56);
+//Load Resource Manager module (MOD_2) (Block 57,58 to page 44,45)
+loadi(44,57);
+loadi(45,58);
+//Load Resource Manager module (MOD_3) (Block 59,60 to page 46,47)
+loadi(46,59);
+loadi(47,60);
+//Load Device Manager module (MOD_4) (Block 61,62 to page 48,49)
+loadi(48,61);
+loadi(49,62);
+//Load SCHEDULER module (MOD_5) (Block 63,64 to page 50,51)
+loadi(50,63);
+loadi(51,64);
+//Load SWAPPER module (MOD_6) (Block 63,64 to page 50,51)
+loadi(52,65);
+loadi(53,66);
+
+// ___________________
+//Load common/shared libraries (Block 13,14 to page 63,64)
+loadi(63,13);
+loadi(64,14);
+
+//Load INIT (Block 7,8 to page 65,66)
+loadi(65,7);
+//loadi(66,8);
+
+// Load rootfile
+loadi(62,5);
+
+// Set Terminal free
+[ TERMINAL_STATUS_TABLE ] = 0;  // Terminal Status
+
+// Load inode table
+loadi(59,3);
+loadi(60,4);
+
+// Load disk_free table
+loadi(61,2);
+
+// Set DISK status as released
+[ DISK_STATUS_TABLE ] = 0;
+
+// Set SEMAPHORE TABLE entries
+alias counter R0;
+counter = 0;
+while ( counter < MAX_SEM_COUNT )
+do
+    [ SEMAPHORE_TABLE + 4*counter ] = -1;
+    [ SEMAPHORE_TABLE + 4*counter + 1 ] = 0;
+    counter = counter + 1;
+endwhile;
+
+// Set FILE STATUS TABLE entries
+counter = 0;
+while ( counter < MAX_FILE_NUM )
+do
+    [ FILE_STATUS_TABLE + 4*counter ] = -1;
+    [ FILE_STATUS_TABLE + 4*counter + 1 ] = -1;
+    counter = counter + 1;
+endwhile;
+
+// Set FILE OPEN TABLE entries
+counter = 0;
+while ( counter < MAX_OPENFILE_NUM )
+do
+    [ OPEN_FILE_TABLE + 4*counter ] = -1;
+    [ OPEN_FILE_TABLE + 4*counter + 1 ] = 0;
+    [ OPEN_FILE_TABLE + 4*counter + 2 ] = 0;
+    counter = counter + 1;
+endwhile;
+
+// Set BUFFER TABLE entries
+counter = 0;
+while ( counter < MAX_BUFFER )
+do
+    [ BUFFER_TABLE + 4*counter ] = -1;          //Block Number
+    [ BUFFER_TABLE + 4*counter + 1 ] = 0;       //Dirty bit
+    [ BUFFER_TABLE + 4*counter + 2 ] = -1;       //Locking PID
+    //[ BUFFER_TABLE + 4*counter + 3 ] = -1;       //Unused?
+    counter = counter + 1;
+endwhile;
+
+
+// Initial memory allocation details ---------
+[ SYSTEM_STATUS_TABLE + 3 ] = 0;  //WAIT_MEM_COUNT
+[ SYSTEM_STATUS_TABLE + 2 ] = 43;  //MEM_FREE COUNT
+//alias counter R0;
+counter = 0;
+while ( counter < 85 )
+do
+    [ MEMORY_FREE_LIST + counter ] = 1;
+    counter = counter + 1;
+endwhile;
+while ( counter < 128 )
+do
+    [ MEMORY_FREE_LIST + counter ] = 0;
+    counter = counter + 1;
+endwhile;
+// SWAPPED COUNT, PAGING STATUS
+[SYSTEM_STATUS_TABLE + 4 ] = 0;
+[SYSTEM_STATUS_TABLE + 5 ] = 0;
+
+
+// -------------------------------------------
+
+// *************** Loading usermode programs ***************
+
+// /////////////////////////////////////////// INIT //////////////////////////////////////////////////////////////////
+alias processTable R1;
+processTable = PROCESS_TABLE + 16;
+// ************** Create process table entries ***************
+[ processTable + 0] = 0;                        // TICK
+[ processTable + 1] = 1;                        // PID
+[ processTable + 3] = 1;                        // USERID, 1=root
+[ processTable + 4] = CREATED;                  // STATE
+[ processTable + 11] = 77;                      // User Area Page No.
+[ processTable + 12] = 0;                       // KPTR (Kernel Stack offset)
+[ processTable + 13] = 8 * 512;                 // UPTR (Usermode Stack logical address)
+[ processTable + 14] = PAGE_TABLE_BASE + 20;    // PTBR
+[ processTable + 15] = 10;                      // PTLR
+//************* Set page table location and length for INIT ************
+PTBR = PAGE_TABLE_BASE + 20;
+PTLR = 10;
+//******* Populate page table entries for INIT (Phy: code-65,66 , stack-76) ***********
+//Page 0 (1st Page) (Library)
+[PTBR+0] = 63;
+[PTBR+1] = "0100";
+[PTBR+2] = 64;
+[PTBR+3] = "0100";
+//Page 2 (3rd Page) (Heap)
+[PTBR+4] = -1;
+[PTBR+5] = "0000";
+[PTBR+6] = -1;
+[PTBR+7] = "0000";
+//Page 4 (5th page) (Code)
+[PTBR+8] = 65;
+[PTBR+9] = "0100";
+[PTBR+10] = -1;
+[PTBR+11] = "0000";
+//Invalid pages in code section (Pages 6,7 / 7th, 8th page)
+[PTBR+12] = -1;
+[PTBR+13] = "0000";
+[PTBR+14] = -1;
+[PTBR+15] = "0000";
+//Page 8 (9th page)
+[PTBR+16] = 66;
+[PTBR+17] = "0110";
+[PTBR+18] = -1;
+[PTBR+19] = "0000";
+//Set usermode program (Here: INIT) entry point in usermode program stack
+[66*512] = [65 * 512 + 1];
+
+// Initialize disk_map_table table of INIT
+//[ DISK_MAP_TABLE + 10 + 0 ] = -1;
+//[ DISK_MAP_TABLE + 10 + 1 ] = -1;
+//
+//[ DISK_MAP_TABLE + 10 + 2 ] = -1;
+//[ DISK_MAP_TABLE + 10 + 3 ] = -1;
+//
+
+// required??????????????
+[ DISK_MAP_TABLE + 10 + 4 ] = 7;
+
+//[ DISK_MAP_TABLE + 10 + 5 ] = 8;
+//[ DISK_MAP_TABLE + 10 + 6 ] = -1;
+//[ DISK_MAP_TABLE + 10 + 7 ] = -1;
+//
+//[ DISK_MAP_TABLE + 10 + 8 ] = -1;
+//[ DISK_MAP_TABLE + 10 + 9 ] = -1;
+
+// Initialize per-process resource table of INIT
+// 496-511 words of userAreaPage
+alias resourceTable R0;
+resourceTable = 496;
+while ( resourceTable < 512 )
+do
+    [ ( [ processTable + 11 ] * 512 ) + resourceTable ] = -1;
+    resourceTable = resourceTable + 1;
+endwhile;
+
+// /////////////////////////////////////////// SHELL //////////////////////////////////////////////////////////////////
+loadi(67,9);
+loadi(68,10);
+processTable = PROCESS_TABLE + 2*16;
+// ************** Create process table entries ***************
+[ processTable + 0] = 0;                        // TICK
+[ processTable + 1] = 2;                        // PID
+[ processTable + 2] = 1;                        // PPID
+[ processTable + 3] = 1;                        // USERID, 1=root
+[ processTable + 4] = TERMINATED;                  // STATE
+[ processTable + 11] = 80;                      // User Area Page No.
+[ processTable + 12] = 0;                       // KPTR (Kernel Stack offset)
+[ processTable + 13] = 8 * 512;                 // UPTR (Usermode Stack logical address)
+[ processTable + 14] = PAGE_TABLE_BASE + 2*20;    // PTBR
+[ processTable + 15] = 10;                      // PTLR
+//************* Set page table location and length for INIT ************
+PTBR = PAGE_TABLE_BASE + 40;
+PTLR = 10;
+//******* Populate page table entries for INIT (Phy: code-65,66 , stack-76) ***********
+//Page 0 (1st Page) (Library)
+[PTBR+0] = 63;
+[PTBR+1] = "0100";
+[PTBR+2] = 64;
+[PTBR+3] = "0100";
+//Page 2 (3rd Page) (Heap)
+[PTBR+4] = -1;
+[PTBR+5] = "0000";
+[PTBR+6] = -1;
+[PTBR+7] = "0000";
+//Page 4 (5th page) (Code)
+[PTBR+8] = 67;
+[PTBR+9] = "0100";
+[PTBR+10] = 68;
+[PTBR+11] = "0100";
+//Invalid pages in code section (Pages 6,7 / 7th, 8th page)
+[PTBR+12] = -1;
+[PTBR+13] = "0000";
+[PTBR+14] = -1;
+[PTBR+15] = "0000";
+//Page 8 (9th page)
+[PTBR+16] = 78;
+[PTBR+17] = "0110";
+[PTBR+18] = 79;
+[PTBR+19] = "0110";
+//Set usermode program (Here: SHELL) entry point in usermode program stack
+[78*512] = [67 * 512 + 1];
+
+// Initialize disk_map_table table of SHELL
+    alias diskMapTable R2;
+    diskMapTable = DISK_MAP_TABLE + 20;
+    [ diskMapTable + 0 ] = -1;
+    [ diskMapTable + 1 ] = -1;
+
+    [ diskMapTable + 2 ] = -1;
+    [ diskMapTable + 3 ] = -1;
+
+    [ diskMapTable + 4 ] = 9;
+    [ diskMapTable + 5 ] = 10;
+    [ diskMapTable + 6 ] = -1;
+    [ diskMapTable + 7 ] = -1;
+
+    [ diskMapTable + 8 ] = -1;
+    [ diskMapTable + 9 ] = -1;
+
+    // Initialize per-process resource table of INIT
+// 496-511 words of userAreaPage
+
+resourceTable = 496;
+while ( resourceTable < 512 )
+do
+    [ ( [ processTable + 11 ] * 512 ) + resourceTable ] = -1;
+    resourceTable = resourceTable + 1;
+endwhile;
+
+// Terminate all other processes and set TICK = 0
+    //[PROCESS_TABLE + 2 * 16 + 4] = TERMINATED; 
+    alias counter R3;
+    counter = 3;
+    while( counter < MAX_PROC_NUM)
+    do
+        [ PROCESS_TABLE + counter * 16 ] = 0;
+        [ PROCESS_TABLE + counter * 16 + 4 ] = TERMINATED;
+        counter = counter + 1;
+    endwhile;
+// ****************************************
+
+return;

@@ -1,0 +1,250 @@
+//print("INT6");
+alias procTable R9;
+procTable = PROCESS_TABLE + [SYSTEM_STATUS_TABLE + CORE*5 + 1 ]*16;
+// Set mode of the exec. Process in Process table
+[ procTable + 9 ] = 7;  // 9th field=mode, syscall no. = 7 (read)
+
+// Save current SP
+alias userSP R1;
+userSP = SP;
+[ procTable + 13 ] = userSP;    //13th entry=User stack ptr
+
+// Set SP to empty Kernel stack (To User Area page no.)
+SP = [ procTable + 11 ] * 512 - 1;
+
+// Acquire KLOCK
+multipush(R9,R1);
+R1 = 1;
+call MOD_8;
+multipop(R9,R1);
+// Executing in privileged mode, so manual phy. address translation
+// logical page no. = logical addr. / 512
+// Offset = logical addr. % 512 (also = Phy.addr. % 512)
+// Phy. page no. =  [ PTBR + (2 * logical page no.) ]
+// Phy. address = ( Phy. page no. * 512 ) + Offset
+
+//userSP = < IP(return pos) >, < ret.val. >, < not.needed >, < arg2 >, < arg1 >, < syscall.no. >
+//index:           0         ,      -1     ,        -2     ,    -3   ,   -4    ,       -5
+
+//Check if Arg1 (file descriptor) is valid (At userSP - 4)
+
+alias fileDescriptor R4;
+fileDescriptor = [ [ PTBR + 2 * ((userSP-4) / 512) ] * 512 + ((userSP-4) % 512) ];
+
+if (fileDescriptor == -1)   // -1 = fileDescriptor for terminal write
+then
+    // Find phy. addr of arg2
+    alias word_addr R5;
+    word_addr = [ [ PTBR + 2 * ((userSP-3) / 512) ] * 512 + ((userSP-3) % 512) ];
+
+    // *********** ACQUIRE TERMINAL AND READ ************
+    multipush(R9,R1,R4,R5);           // Save registers to be used later
+    //R0                                       will be used for return Value
+    R1 = 4;                                 // Fn. Code: 4 for Terminal Read (to MOD_4)
+    R2 = [ SYSTEM_STATUS_TABLE + CORE*5 + 1 ];       // PID of the process to acquire and release terminal
+    R3 = word_addr;                         // Adress to which word is to be read
+    call MOD_4;                             // Call MOD_4 for Terminal Read
+    // No return value for Terminal Read
+    multipop(R9,R1,R4,R5);            // Restore registers saved before call
+    // ********************************
+    //Set return value as 0 in stack indicating Success
+    [ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = 0;
+else
+//print("RR");
+    //Check if fileDescriptor is valid, else return -1
+    if ( (fileDescriptor < 0) || (fileDescriptor > 7) )
+    then
+        [ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = -1;
+// Release KLOCK
+multipush(R9,R1);
+R1 = 4;
+R2 = KERN_LOCK;
+call MOD_8;
+multipop(R9,R1);
+        // Restore SP
+        SP = userSP;
+        //Restore Mode flag
+        [ procTable + 9 ] = 0;  // 9th field=mode
+
+        // Pass control back to usermode program
+        ireturn;
+    endif;
+
+    // If resource identifier from resourcetable with index as fileDescriptor is not file return -1
+    if ( [ [procTable + 11] * 512 + RESOURCE_TABLE_OFFSET + 2*fileDescriptor ] != FILE )
+    then
+        [ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = -1;
+// Release KLOCK
+multipush(R9,R1);
+R1 = 4;
+R2 = KERN_LOCK;
+call MOD_8;
+multipop(R9,R1);
+        // Restore SP
+        SP = userSP;
+        //Restore Mode flag
+        [ procTable + 9 ] = 0;  // 9th field=mode
+
+        //print(fileDescriptor);
+        // Pass control back to usermode program
+        ireturn;
+    endif;
+
+    alias openFileIndex R2;
+    openFileIndex = [ [ procTable + 11] * 512 + RESOURCE_TABLE_OFFSET + 2*fileDescriptor + 1];
+    alias inodeIndex R3;
+    inodeIndex = [ OPEN_FILE_TABLE + openFileIndex * 4 + 0 ];
+    // **** CALL ACQUIRE_INODE (Resource manager, mod_0) ******
+    multipush(R9,R1,R2,R3,R4);
+    // R1=fnNum(4-acquire_inode),R2=InodeIndex,R3=PID
+    R1 = 4;
+    R2 = inodeIndex;
+    R3 = [ SYSTEM_STATUS_TABLE + CORE*5 + 1 ];
+        //print("BUFR");
+        //print([FILE_STATUS_TABLE + R2*4]);
+    call MOD_0;
+    multipop(R9,R1,R2,R3,R4);
+    // **************************
+    // If failed, return -1
+    if ( R0 == -1 )
+    then
+        [ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = -1;
+// Release KLOCK
+multipush(R9,R1);
+R1 = 4;
+R2 = KERN_LOCK;
+call MOD_8;
+multipop(R9,R1);
+        // Restore SP
+        SP = userSP;
+        //Restore Mode flag
+        [ procTable + 9 ] = 0;  // 9th field=mode
+
+        // Pass control back to usermode program
+        ireturn;
+    endif;
+
+    // Get LSEEK
+    alias LSEEK R5;
+    LSEEK = [ OPEN_FILE_TABLE + openFileIndex * 4 + 2 ];
+    // Get arg2, and find the physical address from logical address in arg2
+    alias logicalAddr R7;
+    alias phyAddr R6;
+    // logical addr = [ [ PTBR + 2 * ((userSP-3) / 512) ] * 512 + ((userSP-3) % 512) ]
+    logicalAddr = [ [ PTBR + 2 * ((userSP-3) / 512) ] * 512 + ((userSP-3) % 512) ];
+    phyAddr = [ PTBR + 2* (logicalAddr/512) ] * 512 + (logicalAddr%512);
+    // If file is rootfile (inodeIndex == INODE_ROOT)
+    if (inodeIndex == INODE_ROOT)
+    then
+        // if lseek value = size of root file(480) release_inode and return -2
+        if( LSEEK == 480 )          //Check EOF
+        then
+            // **** CALL RELEASE_INODE (Resource manager, mod_0) ******
+            multipush(R9,R1,R2,R3,R4,R5,R6);
+            // R1=fnNum(5-release_inode),R2=InodeIndex,R3=PID
+            R1 = 5;
+            R2 = inodeIndex;
+            R3 = [ SYSTEM_STATUS_TABLE + CORE*5 + 1 ];
+            call MOD_0;
+            multipop(R9,R1,R2,R3,R4,R5,R6);
+            // **************************
+            //Return -2
+            [ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = -2;
+// Release KLOCK
+multipush(R9,R1);
+R1 = 4;
+R2 = KERN_LOCK;
+call MOD_8;
+multipop(R9,R1);
+            // Restore SP
+            SP = userSP;
+            //Restore Mode flag
+            [ procTable + 9 ] = 0;  // 9th field=mode
+
+            // Pass control back to usermode program
+            ireturn;
+        endif;
+
+        // Store value at ROOT_FILE + LSEEK to mem addr pointed by phyAddr
+        [phyAddr] = [ ROOT_FILE + LSEEK ];
+        // Increment LSEEK in OPEN_FILE_TABLE
+        [ OPEN_FILE_TABLE + openFileIndex * 4 + 2 ] = LSEEK + 1;
+    else                // Not rootfile
+        if ( LSEEK >= [ INODE_TABLE + inodeIndex * 16 + 2 ])
+        then
+        //print("EOF");
+            // **** CALL RELEASE_INODE (Resource manager, mod_0) ******
+            multipush(R9,R1,R2,R3,R4,R5,R6);
+            // R1=fnNum(5-release_inode),R2=InodeIndex,R3=PID
+            R1 = 5;
+            R2 = inodeIndex;
+            R3 = [ SYSTEM_STATUS_TABLE + CORE*5 + 1 ];
+            call MOD_0;
+            multipop(R9,R1,R2,R3,R4,R5,R6);
+            // **************************
+            //Return -2
+            [ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = -2;
+// Release KLOCK
+multipush(R9,R1);
+R1 = 4;
+R2 = KERN_LOCK;
+call MOD_8;
+multipop(R9,R1);
+            // Restore SP
+            SP = userSP;
+            //Restore Mode flag
+            [ procTable + 9 ] = 0;  // 9th field=mode
+
+            // Pass control back to usermode program
+            ireturn;
+        endif;
+        // There can be 4 datablocks (most) for a file (see inode table)
+        // Find which one is required to be fetched -> LSEEK/512
+        // Find disk block number for that datablock from inodetable -> [INODE_TABLE+8+(LSEEK/512)]
+        alias diskBlockNum R7;
+        alias offset R8;
+        diskBlockNum = [INODE_TABLE + inodeIndex * 16 + 8 + (LSEEK/512)];
+        offset = (LSEEK % 512);
+        // **** CALL BUFFERED_READ (File manager, mod_3) ******
+        multipush(R9,R1,R2,R3,R4,R5,R6);
+        // R1=fnNum(2-buffered_read),R2=diskBlockNum,R3=offset,R4=phyAddr
+        R1 = 2;
+        //print(diskBlockNum);
+        R2 = diskBlockNum;
+        R3 = offset;
+        R4 = phyAddr;
+        call MOD_3;
+        //print("     DK");
+        multipop(R9,R1,R2,R3,R4,R5,R6);
+        // **************************
+        //print("::R");
+        //print([SYSTEM_STATUS_TABLE + CORE*5+1]);
+        //print([phyAddr]);
+        // Increment LSEEK in OPEN_FILE_TABLE
+        [ OPEN_FILE_TABLE + openFileIndex * 4 + 2 ] = LSEEK + 1;
+    endif;
+    // **** CALL RELEASE_INODE (Resource manager, mod_0) ******
+    multipush(R9,R1,R2,R3,R4,R5,R6);
+    // R1=fnNum(5-release_inode),R2=InodeIndex,R3=PID
+    R1 = 5;
+    R2 = inodeIndex;
+    R3 = [ SYSTEM_STATUS_TABLE + CORE*5 + 1 ];
+    call MOD_0;
+    multipop(R9,R1,R2,R3,R4,R5,R6);
+endif;
+
+// Return 0
+[ [ PTBR + 2 * ((userSP-1) / 512) ] * 512 + ((userSP-1) % 512) ] = 0;
+// Release KLOCK
+multipush(R9,R1);
+R1 = 4;
+R2 = KERN_LOCK;
+call MOD_8;
+multipop(R9,R1);
+// Restore SP
+SP = userSP;
+//Restore Mode flag
+[ procTable + 9 ] = 0;  // 9th field=mode
+
+// Pass control back to usermode program
+ireturn;

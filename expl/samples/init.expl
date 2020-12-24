@@ -1,0 +1,22 @@
+decl
+    int arr[100];
+enddecl
+
+int main() {
+decl
+    int temp;
+    int n, i, j;
+enddecl
+begin
+    temp = exposcall("Write", -2, "shell> ");
+    temp = exposcall("Read", -1, n);
+    temp = exposcall("Exec", n);
+    if(temp == -1)
+    then
+        temp = exposcall("Write", -2, "exec failed");
+    endif;
+
+    temp = exposcall("Write", -2, "nah bye");
+    return 0;
+end
+}

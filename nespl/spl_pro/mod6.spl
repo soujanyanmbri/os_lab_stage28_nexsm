@@ -1,0 +1,207 @@
+//=====================================THIS IS PAGER MODULE HELLO =========================================
+// -----------functions: swap in and swap out only. arguments - pid for both. no return value so chill
+// -----------swap in = 2; swap out = 1;
+//------------this is responsible for selecting processes to swapout - swap in and conduct the swap out swap in 
+
+print "mod 6";
+print R1;
+
+alias functionnum R1;
+alias arg R2;
+
+if(functionnum == SWAP_OUT) then
+    alias pid R5;
+    alias pte R6;
+    alias i R7;
+    //print "in swap out";
+    pid = arg;
+    // --------------------------------------------find a process with the state wait process .
+    i = 3; // 0: idle; 1: init; 2: shell
+    while( i < 14) do
+        pte = PROCESS_TABLE + i * 16;
+        if( [pte + 4] == WAIT_PROCESS && [pte + 6] == 0) then
+            break;
+        endif;
+        i = i+1;
+    endwhile;
+    // ----------------------if no process is found check for semaphores;
+    if(i > 14) then
+        i = 3;
+        while( i < 14) do
+        pte = PROCESS_TABLE + i * 16;
+        if( [pte + 4] == WAIT_SEMAPHORE && [pte + 6] == 0) then
+            break;
+        endif;
+        i = i+1;
+    endwhile;
+    endif;
+    //----------------------find the one with the highest tick otherwise;
+    if(i > 14) then
+        alias hpid R8;
+        alias htick R9;
+        alias temp R1;
+        hpid = 14;
+        htick = -100;
+        i = 3;
+        while ( i < 14) do
+            pte = PROCESS_TABLE + i*16;
+            // status of the process is temp
+            temp = [pte + 4];
+            if( (temp != RUNNING && temp != TERMINATED && temp != ALLOCATED )&& ([pte] > htick) && ([pte + 6] == 0)  ) then
+                htick = [pte];
+                hpid = i;
+            endif;
+            i = i + 1;
+        endwhile;
+        i = hpid;
+        pte = PROCESS_TABLE + i*16;
+    endif;
+
+    // -----------------------no swappable processes are found -------------------------------
+    if(i > 13) then
+        [SYSTEM_STATUS_TABLE + 5] = 0;
+        R0 = -1;
+        return;
+    endif;
+    // ==========================pid is selected, now start swapping!==================================================
+    // 1. set the tick of the pte of the selected process to 0; 
+    alias ptb R8;
+    alias pti R9;
+    alias flag R10;
+    alias phy R11;
+    [pte + 0] = 0;
+    //ptb = [pte + 14];
+    ptb = PAGE_TABLE_BASE + 20*i;
+    //2. call release page to release pages of the process. invalidate the entry
+    pti = 2;
+    while(pti < 10) do
+        flag = 0; 
+        phy = [ptb + pti*2];
+        if(phy == -1) then
+            pti = pti + 1;
+            flag = 1;
+            continue;
+        endif;
+        //if stack or unshared valid heap page
+        // ---------------check if it is the heap == 2 to 3; shared heap meaning 
+        if(pti >= 8 || pti <= 3 && [MEMORY_FREE_LIST + phy] == 1 && flag == 0) then
+            multipush(R1, R2, R3, R4, R5, R6, R7, R8, R9, R10,R11, R12);
+            R1 = GET_SWAP_BLOCK;
+            call MEMORY_MANAGER;
+            multipop( R1, R2, R3, R4, R5, R6, R7, R8, R9, R10,R11, R12);
+            R12 = R0;
+            //print "swap block is";
+            //print R12;
+            [DISK_MAP_TABLE + i*10 + pti ] = R12;
+            //print "here";
+            backup;
+            R1 = DISK_STORE;
+            R2 = pid;
+            R3 = [ptb + pti*2];
+            R4 = R12;
+            call DEVICE_MANAGER;
+            restore;
+           // print "is this ti";
+        endif; 
+        if( ((pti!=2 && pti!=3)  ||  [MEMORY_FREE_LIST + phy]==1) && flag == 0) then
+				backup;
+				R1 = RELEASE_PAGE;
+				R2 = phy;
+				call MOD_2;
+				restore;
+
+				[ptb+pti*2] = -1;
+				[ptb+pti*2+1] = "0000";
+			endif;
+        //print "heree";
+        //print "release done";
+        pti = pti +1;
+  
+    endwhile;
+    [pte + 6] = 1;
+    [SYSTEM_STATUS_TABLE+4] = [SYSTEM_STATUS_TABLE+4] +1;
+    [SYSTEM_STATUS_TABLE + 5] = 0;
+    return;
+endif;
+
+//=======================================SWAP IN =================================================================
+if(functionnum == SWAP_IN) then
+    alias pid R5;
+    alias i R6;
+    alias pte R7;
+    alias hpid R8;
+    alias htick R9;
+
+    pid = arg;
+    hpid = 14;
+    htick = -100;
+
+    i = 3;
+    while(i < 14) do
+        pte =  PROCESS_TABLE +  i*16;
+        if([pte + 6] == 1  &&  [pte + 4] == READY  &&  [pte + 0] > htick)  then
+            htick = [pte];
+            hpid = i;
+        endif;
+        i = i+ 1;
+    endwhile;
+    i = hpid;
+    pte = PROCESS_TABLE + i*16;
+    if(i == -1) then
+        [SYSTEM_STATUS_TABLE + 5] = 0;
+        R0 = -1;
+        return;
+    endif;
+
+    alias page_table R8;
+    alias dmt R9;
+    alias pti R10;
+    alias disk R11;
+    alias ptb R12;
+    alias phy R13;
+
+    page_table = PAGE_TABLE_BASE + 20*i;
+    dmt = DISK_MAP_TABLE + 10*i;
+    ptb = [pte + 14];
+    //print "before";
+    pti = 2;
+    while (pti < 10 ) do
+        disk = [dmt + pti];
+        phy = [ptb + pti+2];
+      //  print "disk";
+       // print disk;
+        if(pti <= 3 || pti >= 8 && disk!= -1) then
+           // print "before free";
+            multipush (R1, R2, R3, R4, R5, R6, R7, R9, R10, R11, R12, R13);
+			R1 = GET_FREE_PAGE;
+			call MOD_2;
+			multipop (R1, R2, R3, R4, R5, R6, R7, R9, R10, R11, R12, R13);
+            R14 = R0;
+           // print"afterfree";
+            backup;
+			R1 = DISK_LOAD;
+			R2 = pid; 	
+			R3 = R14;	//passing page_num
+			R4 = disk;	//passing block num
+			call MOD_4;
+			restore;
+
+            backup;	
+			R1 = RELEASE_BLOCK;
+			R2 = disk;
+			call MOD_2;
+			restore;
+            
+            //print "heree46";
+
+            disk = -1;
+            [ptb + pti*2] = R14;
+            [ptb + pti*2 + 1] = "0110";
+        endif;
+        pti = pti +1;
+    endwhile;
+    [pte + 6] = 0;
+    [SYSTEM_STATUS_TABLE + 4] = [SYSTEM_STATUS_TABLE + 4] -1;      // SWAP COUNT
+    [SYSTEM_STATUS_TABLE + 5] = 0;                                 //PAGING STATUS
+    return;
+endif;  

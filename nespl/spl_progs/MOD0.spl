@@ -1,0 +1,289 @@
+alias func R1;
+alias pid R2;
+alias i R3;	
+//print "MOd0";
+// ==================================================RESOURSE MANAGER=====================================================
+if(func == ACQUIRE_TERMINAL) then
+	while([TERMINAL_STATUS_TABLE + 0] == 1) do
+		[PROCESS_TABLE + pid*16 + 4] = WAIT_TERMINAL;
+		backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+		R3 = "Mod01";
+        call ACCESS_CONTROL;
+        restore;
+
+        backup;
+        call CONTEXT_SWITCH;
+        restore;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+        call ACCESS_CONTROL;
+		R3 = "Mod02";
+        restore;
+
+	endwhile;
+
+	[TERMINAL_STATUS_TABLE + 0] = 1;
+	[TERMINAL_STATUS_TABLE + 1] = pid;
+
+	return;
+endif;
+
+if(func == RELEASE_TERMINAL) then
+	if(pid != [TERMINAL_STATUS_TABLE + 1]) then
+		R0 = -1;
+		return;
+	endif;
+	[TERMINAL_STATUS_TABLE + 0] = 0;
+	i = 0;
+
+	//----setting all process that were WAIT_TERMINAL to READY----
+	while(i < 16) do
+		if([PROCESS_TABLE + i*16 + 4] == WAIT_TERMINAL) then
+			[PROCESS_TABLE + i*16 + 4] = READY;
+		endif;
+		i = i+ 1;
+	endwhile;
+	R0 = 0;
+	
+	return;
+endif;
+
+
+
+
+
+if(func == ACQUIRE_DISK) then
+	while([DISK_STATUS_TABLE + 0] == 1) do 
+		[PROCESS_TABLE + 16*[SYSTEM_STATUS_TABLE+CORE*5 + 1] + 4] = WAIT_DISK;
+		backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+		R3 = "MOD0";
+		call ACCESS_CONTROL;
+        
+		restore;
+
+        backup;
+        call CONTEXT_SWITCH;
+        restore;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+		R2 = KERN_LOCK;
+		R3 = "moD0";
+        call ACCESS_CONTROL;
+        restore;
+
+	endwhile;
+						//LOCK the DISK when available
+	[DISK_STATUS_TABLE + 0] = 1;		//setting STATUS as 1 in DISK_STAT_TAB
+	[DISK_STATUS_TABLE + 4] = pid;		//setting PID as pid in DISK_STAT_TAB
+
+	return;
+endif;
+
+//return;
+
+
+
+
+
+
+if(func == ACQUIRE_SEMAPHORE) then
+	alias i R4;
+	i = 0;
+	while(i < MAX_SEM_COUNT) do
+
+		if([SEMAPHORE_TABLE + i*4 + 1] == 0) then
+			[SEMAPHORE_TABLE + i*4 + 1] = 1;	// make proess count to 1
+			[SEMAPHORE_TABLE + i*4 + 0] = -1;	//make locking PID to -1;
+												//if a free entry ids found in SEM_TAB
+			R0 = i;
+			return;
+		endif;
+	i = i + 1;
+	endwhile;
+	
+	R0 = -1;									//return -1 if no entry free in SEM_TABLE
+	return;
+	
+endif;
+
+
+
+
+
+
+
+if(func == RELEASE_SEMAPHORE) then
+	alias sem_id R2;
+	alias pid R3;
+	alias i R4;
+	if([SEMAPHORE_TABLE + sem_id*4 + 0] == pid) then
+		[SEMAPHORE_TABLE + sem_id*4 + 0] = -1;
+		i = 0;
+		while(i < MAX_PROC_NUM) do
+			if([PROCESS_TABLE + i*16 + 4] == WAIT_SEMAPHORE  && [PROCESS_TABLE + i*16 + 5] == sem_id) then
+				[PROCESS_TABLE + i*16 + 4] = READY;
+			endif;
+		i = i + 1;
+		endwhile;
+	endif;
+
+	[SEMAPHORE_TABLE + sem_id*4 + 1] = [SEMAPHORE_TABLE + sem_id*4 + 1] - 1;
+
+	R0 = 0;		//this will always be a success since sem_id will always be valid since it wil always be obtained from PER_PROCESS_TAB which will always get valid seM_ids from accquire semaphire func
+	return;
+endif;
+
+
+
+
+
+
+
+if(func == ACQUIRE_INODE) then
+	alias inodei R2;
+	alias pid R3;
+
+	while([FILE_STATUS_TABLE + 4*inodei + 0] != -1) do
+		[PROCESS_TABLE + 16*pid + 4] = WAIT_FILE;
+		[PROCESS_TABLE + 16*pid + 5] = inodei;
+
+		backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+		R3 = "mod0";
+        call ACCESS_CONTROL;
+        restore;
+
+        backup;
+        call CONTEXT_SWITCH;
+        restore;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+        R2 = KERN_LOCK;
+		R3 = "MD0";
+		call ACCESS_CONTROL;
+        restore;
+
+	endwhile;
+
+	if([INODE_TABLE + 16*inodei + 1] == -1) then		//if file deleted, by the time inode was acquired
+		R0 = -1;
+		return;
+	else
+		[FILE_STATUS_TABLE + 4*inodei + 0] = pid;	//locking the INODE at desored index
+		R0 = 0;
+		return;
+	endif;
+
+endif;
+
+
+if(func == RELEASE_INODE) then
+	alias inodei R2;
+	alias pid R3;
+	alias i R4;
+
+
+	if([FILE_STATUS_TABLE + 4*inodei + 0] != pid) then
+
+		R0 = -1;	//returning -1 as lockingPID is diffrent from process requesting to Release\
+		return;
+
+	else
+
+		[FILE_STATUS_TABLE + 4*inodei + 0] = -1;
+
+		i = 0;
+		while(i < MAX_PROC_NUM) do
+			if([PROCESS_TABLE + 16*i + 4] == WAIT_FILE &&  [PROCESS_TABLE + 16*i + 5] == inodei) then
+				[PROCESS_TABLE + 16*i + 4] = READY;
+			endif;
+		i = i + 1;
+		endwhile;
+
+		R0 = 0;
+		return;		
+
+	endif;
+
+endif;
+
+
+
+
+
+
+
+
+
+if(func == ACQUIRE_BUFFER) then
+	alias buffer_num R2;
+	alias pid R3;
+
+	while([BUFFER_TABLE + 4*buffer_num + 2] != -1  &&  [BUFFER_TABLE + 4*buffer_num + 2] != pid) do
+		[PROCESS_TABLE + 16*pid + 4] = WAIT_BUFFER;
+		[PROCESS_TABLE + 16*pid + 5] = buffer_num;
+
+		backup;
+        R1 = RELEASE_LOCK;
+        R2 = KERN_LOCK;
+        R3 = "MOD1";
+		call ACCESS_CONTROL;
+        restore;
+
+        backup;
+        call CONTEXT_SWITCH;
+        restore;
+
+        backup;
+        R1 = ACQUIRE_KERN_LOCK;
+		R2 = KERN_LOCK;
+		R3= "M0";
+        call ACCESS_CONTROL;
+        restore;
+
+	endwhile;
+
+	[BUFFER_TABLE + 4*buffer_num + 2] = pid;
+
+	return;
+endif;
+
+
+
+
+
+
+
+
+if(func == RELEASE_BUFFER) then
+	alias buffer_num R2;
+	alias pid R3;
+	alias i R4;
+
+	if([BUFFER_TABLE + 4*buffer_num + 2] != pid) then	//if calling process hasnt acqred that buff
+		R0 = -1;
+		return;
+	else		//if calling process has acqrd taht buff
+
+		[BUFFER_TABLE + 4*buffer_num + 2] = -1;
+
+		i = 0;
+		while(i < MAX_PROC_NUM) do
+			if([PROCESS_TABLE + 16*i + 4] == WAIT_BUFFER && [PROCESS_TABLE + 16*i + 5] == buffer_num) then
+				[PROCESS_TABLE + 16*i + 4] = READY;
+			endif;
+		i = i + 1;
+		endwhile;
+
+		R0 = 0;
+		return;
+	endif;
+endif;

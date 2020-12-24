@@ -1,0 +1,9 @@
+int main() {
+decl
+    int temp;
+enddecl
+begin
+    temp = exposcall("Delete", "file.dat");
+    return 0;
+end
+}

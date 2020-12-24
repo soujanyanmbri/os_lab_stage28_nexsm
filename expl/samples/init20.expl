@@ -1,0 +1,29 @@
+int main()
+{
+    decl
+        int temp, num, i, pid;
+    enddecl
+    begin
+    write("pidis");
+        pid = exposcall("Fork");
+        write("infork");
+        write(pid);
+        num = 10;
+        if(pid == 0)
+        then
+            num = num+5;
+            write("if");
+            write(num);
+            write("temp");
+            temp = exposcall("Exec", "odd.xsm");
+        else
+            write("else");
+            num = num+11;
+            write(num);
+            temp = exposcall("Exec", "even.xsm");
+        endif;
+        num = num+10;
+        write(num);
+        return 0;
+    end
+}
